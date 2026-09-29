@@ -1,5 +1,5 @@
 import ast
-from app.models import RepositoryFile, CodeChunk
+from app.models import RepositoryFile, CodeChunk, ChunkType, create_chunk_id
 
 
 def get_source(lines, node):
@@ -11,11 +11,17 @@ def get_source(lines, node):
 def create_chunk(
         file: RepositoryFile,
         node,
-        chunk_type: str,
+        chunk_type: ChunkType,
         name: str,
         lines
 ):
     return CodeChunk(
+        id=create_chunk_id(
+            file,
+            chunk_type,
+            name,
+            node.lineno
+        ),
         path=file.path,
         language=file.language,
         type=chunk_type,
@@ -24,6 +30,7 @@ def create_chunk(
         end_line=node.end_lineno,
         content=get_source(lines, node)
     )
+
 
 def chunk_python_file(file: RepositoryFile) -> list[CodeChunk]:
     content = file.content
@@ -45,7 +52,7 @@ def chunk_python_file(file: RepositoryFile) -> list[CodeChunk]:
                 create_chunk(
                     file,
                     node,
-                    "function",
+                    ChunkType.FUNCTION,
                     node.name,
                     lines
                 )
@@ -57,7 +64,7 @@ def chunk_python_file(file: RepositoryFile) -> list[CodeChunk]:
                 create_chunk(
                     file,
                     node,
-                    "class",
+                    ChunkType.CLASS,
                     node.name,
                     lines
                 )
@@ -71,7 +78,7 @@ def chunk_python_file(file: RepositoryFile) -> list[CodeChunk]:
                         create_chunk(
                             file,
                             child,
-                            "method",
+                            ChunkType.METHOD,
                             f"{node.name}.{child.name}",
                             lines
                         )

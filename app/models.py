@@ -1,4 +1,10 @@
 from dataclasses import dataclass
+from enum import Enum
+
+class ChunkType(str, Enum):
+    FUNCTION = "function"
+    CLASS = "class"
+    METHOD = "method"
 
 """
     This class is a representation of a file in working repository
@@ -26,10 +32,46 @@ class RepositoryFile:
 """
 @dataclass
 class CodeChunk:
+    id:str
     path:str
     language:str
-    type:str
+    type:ChunkType
     name:str
     start_line:int
     end_line:int
     content:str
+
+"""
+    Class to represent a code call
+    AST found that this chunk calls something with this name.
+"""
+@dataclass
+class CodeCall:
+    caller_id: str
+    callee_name: str
+
+"""
+    Class to represent dependencies between code chunks
+    Successfully resolved that call to another chunk in our repository.
+    @fields:
+        - caller: code chunk calling the callee
+"""
+@dataclass
+class CodeDependency:
+    caller_id: str
+    callee_id: str
+
+"""
+    Function to create a unique id for chunks based on their file, name and start line
+
+    This is useful to differentiate between two chunks having the same name
+"""
+def create_chunk_id(
+    file: RepositoryFile,
+    chunk_type: ChunkType,
+    name: str,
+    start_line: int
+) -> str:
+    return (
+        f"{file.path}::{chunk_type.value}::{name}::{start_line}"
+    )

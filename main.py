@@ -1,9 +1,12 @@
 from app.repository import load_repository
 from app.chunker import chunk_python_file
+# from app.retriever import SemanticRetriever
+from app.dependencies import extract_chunk_calls
 
 files = load_repository("sample_repo")
 
 all_chunks = []
+all_calls = []
 
 # file is of type models.RepositoryFile
 for file in files:
@@ -11,12 +14,30 @@ for file in files:
         chunks = chunk_python_file(file)
         all_chunks.extend(chunks)
 
-# chunk is of type models.CodeChunk
 for chunk in all_chunks:
-    print("=" * 50)
-    print(chunk.path)
-    print(chunk.type)
-    print(chunk.name)
-    print(chunk.start_line)
-    print(chunk.end_line)
-    print(chunk.content)
+    all_calls.extend(
+        extract_chunk_calls(chunk)
+    )
+
+for call in all_calls:
+    print(
+        call.caller_id,
+        "->",
+        call.callee_name
+    )
+
+# retriever = SemanticRetriever(all_chunks)
+
+# results = retriever.search(
+#     "Where is multiplication performed?"
+# )
+
+# # chunk is of type models.CodeChunk
+# for chunk, score in results:
+#     print("=" * 50)
+#     print("SCORE:", score)
+#     print("FILE:", chunk.path)
+#     print("TYPE:", chunk.type)
+#     print("NAME:", chunk.name)
+#     print("LINES:", chunk.start_line, "-", chunk.end_line)
+#     print(chunk.content)
