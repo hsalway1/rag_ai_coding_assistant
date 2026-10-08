@@ -3,6 +3,8 @@ from app.chunker import chunk_python_file
 # from app.retriever import SemanticRetriever
 from app.dependencies import extract_chunk_calls
 
+from app.symbols import build_symbol_index
+
 files = load_repository("sample_repo")
 
 all_chunks = []
@@ -19,12 +21,20 @@ for chunk in all_chunks:
         extract_chunk_calls(chunk)
     )
 
-for call in all_calls:
-    print(
-        call.caller_id,
-        "->",
-        call.callee_name
-    )
+symbol_index = build_symbol_index(all_chunks)
+
+for symbol, chunks in symbol_index.items():
+    print(f"\n{symbol}")
+
+    for chunk in chunks:
+        print(f"  -> {chunk.id}")
+
+# for call in all_calls:
+#     print(
+#         call.caller_id,
+#         "->",
+#         call.callee_name
+#     )
 
 # retriever = SemanticRetriever(all_chunks)
 
