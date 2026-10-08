@@ -1,7 +1,7 @@
 import ast
 import textwrap
 
-from app.models import CodeChunk, CodeCall, ChunkType
+from app.models import CodeChunk, CodeCall, ChunkType, CodeDependency
 
 def get_function_calls(node):
     calls = []
@@ -61,6 +61,45 @@ def extract_chunk_calls(
             )
 
     return calls
+
+def resolve_call(
+        call: CodeCall,
+        symbol_index: dict[str, list[CodeChunk]]
+) -> CodeDependency | None:
+    candidates = symbol_index.get(call.callee_name, [])
+
+    # if there are no candidates or there are more than one, we don't guess
+    if len(candidates) == 0:
+        return None
+
+    if len(candidates) > 1:
+        return None
+
+    callee = candidates[0]
+
+    # both ids are unique to CodeChunks
+    return CodeDependency(
+        caller_id=call.caller_id,
+        callee_id=callee.id
+    )
+
+def resolve_calls(
+        calls: list[CodeCall],
+        symbol_index: dict[str, list[CodeChunk]]
+) -> list[CodeDependency]:
+
+    dependencies = []
+
+    for call in calls:
+        dependency = resolve_call(
+            call,
+            symbol_index
+        )
+
+        if dependency is not None:
+            dependencies.append(dependency)
+
+    return dependencies
 
 code = """
 def calculate(a, b):

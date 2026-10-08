@@ -4,6 +4,7 @@ class Calculator:
         return a + b
 
     def subtract(self, a, b):
+        self.add(a, b) # just for testing
         return a - b
 
     def calculate():

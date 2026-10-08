@@ -1,7 +1,7 @@
 from app.repository import load_repository
 from app.chunker import chunk_python_file
 # from app.retriever import SemanticRetriever
-from app.dependencies import extract_chunk_calls
+from app.dependencies import extract_chunk_calls, resolve_calls
 
 from app.symbols import build_symbol_index
 
@@ -21,13 +21,23 @@ for chunk in all_chunks:
         extract_chunk_calls(chunk)
     )
 
+chunk_by_id = {
+    chunk.id: chunk for chunk in all_chunks
+}
+
 symbol_index = build_symbol_index(all_chunks)
 
-for symbol, chunks in symbol_index.items():
-    print(f"\n{symbol}")
+dependencies = resolve_calls(
+    all_calls,
+    symbol_index
+)
 
-    for chunk in chunks:
-        print(f"  -> {chunk.id}")
+for dependency in dependencies:
+    print(
+        dependency.caller_id,
+        "->",
+        dependency.callee_id
+    )
 
 # for call in all_calls:
 #     print(
