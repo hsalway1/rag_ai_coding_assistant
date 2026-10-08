@@ -24,9 +24,11 @@ class TestDependencyResolution(unittest.TestCase):
             content="def multiply(a, b):\n    return a * b"
         )
 
-        symbol_index = build_symbol_index([
-            multiply_chunk
-        ])
+        symbol_index = build_symbol_index([multiply_chunk])
+
+        chunk_by_id = {
+            multiply_chunk.id: multiply_chunk
+        }
 
         call = CodeCall(
             caller_id="main.py::function::calculate::1",
@@ -35,7 +37,8 @@ class TestDependencyResolution(unittest.TestCase):
 
         dependency = resolve_call(
             call,
-            symbol_index
+            symbol_index,
+            chunk_by_id
         )
 
         self.assertIsNotNone(dependency)
@@ -52,6 +55,7 @@ class TestDependencyResolution(unittest.TestCase):
 
     def test_returns_none_when_symbol_does_not_exist(self):
         symbol_index = {}
+        chunk_by_id = {}
 
         call = CodeCall(
             caller_id="main.py::function::calculate::1",
@@ -60,7 +64,8 @@ class TestDependencyResolution(unittest.TestCase):
 
         dependency = resolve_call(
             call,
-            symbol_index
+            symbol_index,
+            chunk_by_id
         )
 
         self.assertIsNone(dependency)
@@ -88,10 +93,14 @@ class TestDependencyResolution(unittest.TestCase):
             content="def save():\n    pass"
         )
 
-        symbol_index = build_symbol_index([
-            first_save,
-            second_save
-        ])
+        chunks = [first_save, second_save]
+
+        symbol_index = build_symbol_index(chunks)
+
+        chunk_by_id = {
+            chunk.id: chunk
+            for chunk in chunks
+        }
 
         call = CodeCall(
             caller_id="main.py::function::run::1",
@@ -100,7 +109,8 @@ class TestDependencyResolution(unittest.TestCase):
 
         dependency = resolve_call(
             call,
-            symbol_index
+            symbol_index,
+            chunk_by_id
         )
 
         self.assertIsNone(dependency)
@@ -117,9 +127,11 @@ class TestDependencyResolution(unittest.TestCase):
             content="def multiply(a, b):\n    return a * b"
         )
 
-        symbol_index = build_symbol_index([
-            multiply_chunk
-        ])
+        symbol_index = build_symbol_index([multiply_chunk])
+
+        chunk_by_id = {
+            multiply_chunk.id: multiply_chunk
+        }
 
         calls = [
             CodeCall(
@@ -134,7 +146,8 @@ class TestDependencyResolution(unittest.TestCase):
 
         dependencies = resolve_calls(
             calls,
-            symbol_index
+            symbol_index,
+            chunk_by_id
         )
 
         self.assertEqual(len(dependencies), 1)

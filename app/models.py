@@ -49,6 +49,7 @@ class CodeChunk:
 class CodeCall:
     caller_id: str
     callee_name: str
+    qualifier: str | None = None
 
 """
     Class to represent dependencies between code chunks
