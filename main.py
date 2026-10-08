@@ -29,7 +29,8 @@ symbol_index = build_symbol_index(all_chunks)
 
 dependencies = resolve_calls(
     all_calls,
-    symbol_index
+    symbol_index,
+    chunk_by_id
 )
 
 for dependency in dependencies:
