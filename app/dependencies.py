@@ -362,6 +362,7 @@ def resolve_self_call(
         callee_id=candidates[0].id
     )
 
+
 def resolve_unqualified_call(
     call: CodeCall,
     symbol_index: dict[str, list[CodeChunk]],
@@ -441,7 +442,10 @@ def resolve_unqualified_call(
 def resolve_call(
     call: CodeCall,
     symbol_index: dict[str, list[CodeChunk]],
-    chunk_by_id: dict[str, CodeChunk]
+    chunk_by_id: dict[str, CodeChunk],
+    imports_by_file: dict[
+        str, dict[str, tuple[str, str | None]]
+    ] = None
 ) -> CodeDependency | None:
     """
     Resolve one raw CodeCall to a repository CodeDependency.
@@ -501,10 +505,44 @@ def resolve_call(
         )
 
     if call.qualifier is None:
+        caller = chunk_by_id.get(call.caller_id)
+
+        if caller is None:
+            return None
+
+        file_imports = (
+            imports_by_file.get(caller.path, {})
+            if imports_by_file is not None
+            else {}
+        )
+
+        imported = file_imports.get(call.callee_name)
+
+        # Resolve explicitly imported functions first.
+        if imported is not None and imported[1] is not None:
+            return resolve_direct_import(
+                call,
+                symbol_index,
+                chunk_by_id,
+                imports_by_file
+            )
+
+        # An imported module name is not itself a function
+        if imported is not None:
+            return None
+
         return resolve_unqualified_call(
             call,
             symbol_index,
             chunk_by_id
+        )
+
+    if imports_by_file is not None:
+        return resolve_module_call(
+            call,
+            symbol_index,
+            chunk_by_id,
+            imports_by_file
         )
 
     return None
@@ -573,3 +611,234 @@ def resolve_calls(
     return dependencies
 
 
+def extract_imports(
+    source: str
+) -> dict[str, tuple[str, str | None]]:
+    """
+    Extract basic import bindings from Python source code.
+
+    Maps names available in the importing module to their
+    original module and optionally imported symbol.
+
+    For example:
+        import utils as u
+        from database import save as persist
+
+    Returns:
+        {
+            "u": ("utils", None),
+            "persist": ("database", "save")
+        }
+
+    Args:
+        source: Complete Python source code of a file.
+
+    Returns:
+        A dictionary mapping locally bound import names to
+        (module_path, imported_symbol) tuples.
+
+    Limitations:
+        Only absolute imports at module scope are supported.
+        Star imports, relative imports, and imports inside
+        functions/classes are not handled yet.
+    """
+    tree = ast.parse(source)
+    imports = {}
+
+    for node in tree.body:
+
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local_name = (
+                    alias.asname
+                    if alias.asname
+                    else alias.name.split(".")[0]
+                )
+
+                imports[local_name] = (
+                    alias.name if alias.asname else local_name,
+                    None
+                )
+
+        elif isinstance(node, ast.ImportFrom):
+
+            if node.module is None or node.level > 0:
+                continue
+
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+
+                local_name = alias.asname or alias.name
+
+                imports[local_name] = (
+                    node.module,
+                    alias.name
+                )
+
+    return imports
+
+
+def resolve_module_call(
+    call: CodeCall,
+    symbol_index: dict[str, list[CodeChunk]],
+    chunk_by_id: dict[str, CodeChunk],
+    imports_by_file: dict[
+        str, dict[str, tuple[str, str | None]]
+    ],
+) -> CodeDependency | None:
+    """
+    Resolve a module-qualified function call such as utils.save().
+
+    The qualifier must correspond to an imported module in the
+    caller's file.
+
+    Args:
+        call:
+            Extracted function call containing the callee name
+            and qualifier.
+
+        symbol_index:
+            Maps symbol names to possible definitions.
+
+        chunk_by_id:
+            Maps exact chunk IDs to CodeChunk objects.
+
+        imports_by_file:
+            Maps source file paths to their extracted imports.
+
+    Returns:
+        A CodeDependency if exactly one matching top-level
+        function is found, otherwise None.
+
+    Limitations:
+        Supports simple absolute module imports.
+        Does not resolve object methods, re-exports, or
+        relative imports.
+    """
+
+    if call.qualifier is None:
+        return None
+
+    caller = chunk_by_id.get(call.caller_id)
+
+    if caller is None:
+        return None
+
+    file_imports = imports_by_file.get(caller.path, {})
+
+    imported = file_imports.get(call.qualifier)
+
+    if imported is None:
+        return None
+
+    module_name, imported_symbol = imported
+
+    # This helper handles imported modules, not imported functions.
+    if imported_symbol is not None:
+        return None
+
+    # Convert dotted Python module names into repository paths.
+    expected_path = module_name.replace(".", "/") + ".py"
+
+    candidates = symbol_index.get(call.callee_name, [])
+
+    matching_functions = [
+        candidate
+        for candidate in candidates
+        if (
+            candidate.type == ChunkType.FUNCTION
+            and candidate.path == expected_path
+        )
+    ]
+
+    if len(matching_functions) != 1:
+        return None
+
+    return CodeDependency(
+        caller_id=call.caller_id,
+        callee_id=matching_functions[0].id,
+    )
+
+
+def resolve_direct_import(
+    call: CodeCall,
+    symbol_index: dict[str, list[CodeChunk]],
+    chunk_by_id: dict[str, CodeChunk],
+    imports_by_file: dict[
+        str, dict[str, tuple[str, str | None]]
+    ],
+) -> CodeDependency | None:
+    """
+    Resolve functions imported using:
+        from utils import save
+        from utils import save as persist
+
+    Args:
+        call:
+            An unqualified CodeCall.
+
+        symbol_index:
+            Maps symbol names to candidate definitions.
+
+        chunk_by_id:
+            Maps chunk IDs to exact chunks.
+
+        imports_by_file:
+            Import bindings for each repository file.
+
+    Returns:
+        A CodeDependency if exactly one matching function
+        is found, otherwise None.
+    """
+    if call.qualifier is not None:
+        return None
+
+    caller = chunk_by_id.get(call.caller_id)
+
+    if caller is None:
+        return None
+
+    file_imports = imports_by_file.get(caller.path, {})
+    imported = file_imports.get(call.callee_name)
+
+    if imported is None:
+        return None
+
+    module_name, imported_symbol = imported
+
+    # Only handle direct function imports.
+    if imported_symbol is None:
+        return None
+
+    expected_path = module_name.replace(".", "/") + ".py"
+
+    candidates = symbol_index.get(imported_symbol, [])
+
+    matches = [
+        candidate
+        for candidate in candidates
+        if (
+            candidate.type == ChunkType.FUNCTION
+            and candidate.path == expected_path
+        )
+    ]
+
+    if len(matches) != 1:
+        return None
+
+    return CodeDependency(
+        caller_id=call.caller_id,
+        callee_id=matches[0].id,
+    )
+
+# testing - remove app from app.models from the import statement to run
+source = """
+import utils
+import database as db
+from helpers import validate
+from services.user import save as persist
+"""
+
+if __name__ == "__main__":
+    print(extract_imports(source))

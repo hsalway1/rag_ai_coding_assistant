@@ -24,10 +24,23 @@ class TestDependencyResolution(unittest.TestCase):
             content="def multiply(a, b):\n    return a * b"
         )
 
-        symbol_index = build_symbol_index([multiply_chunk])
+        calculate_chunk = CodeChunk(
+            id="main.py::function::calculate::1",
+            path="main.py",
+            language="python",
+            type=ChunkType.FUNCTION,
+            name="calculate",
+            start_line=1,
+            end_line=2,
+            content="def calculate():\n    multiply(2, 3)"
+        )
+
+        chunks = [multiply_chunk, calculate_chunk]
+        symbol_index = build_symbol_index(chunks)
 
         chunk_by_id = {
-            multiply_chunk.id: multiply_chunk
+            chunk.id: chunk
+            for chunk in chunks
         }
 
         call = CodeCall(
@@ -127,19 +140,33 @@ class TestDependencyResolution(unittest.TestCase):
             content="def multiply(a, b):\n    return a * b"
         )
 
-        symbol_index = build_symbol_index([multiply_chunk])
+        calculate_chunk = CodeChunk(
+            id="main.py::function::calculate::1",
+            path="main.py",
+            language="python",
+            type=ChunkType.FUNCTION,
+            name="calculate",
+            start_line=1,
+            end_line=3,
+            content="def calculate():\n    multiply(2, 3)\n    print('done')"
+        )
+
+        chunks = [multiply_chunk, calculate_chunk]
+
+        symbol_index = build_symbol_index(chunks)
 
         chunk_by_id = {
-            multiply_chunk.id: multiply_chunk
+            chunk.id: chunk
+            for chunk in chunks
         }
 
         calls = [
             CodeCall(
-                caller_id="main.py::function::calculate::1",
+                caller_id=calculate_chunk.id,
                 callee_name="multiply"
             ),
             CodeCall(
-                caller_id="main.py::function::calculate::1",
+                caller_id=calculate_chunk.id,
                 callee_name="print"
             ),
         ]
@@ -154,7 +181,7 @@ class TestDependencyResolution(unittest.TestCase):
 
         self.assertEqual(
             dependencies[0].callee_id,
-            "calculator.py::function::multiply::1"
+            multiply_chunk.id
         )
 
 
