@@ -362,6 +362,81 @@ def resolve_self_call(
         callee_id=candidates[0].id
     )
 
+def resolve_unqualified_call(
+    call: CodeCall,
+    symbol_index: dict[str, list[CodeChunk]],
+    chunk_by_id: dict[str, CodeChunk]
+) -> CodeDependency | None:
+    """
+    Resolve an unqualified function call such as `save()`.
+
+    Resolution strategy:
+
+    1. Look up symbols matching the called name.
+    2. Keep only top-level function chunks.
+    3. Find the caller chunk.
+    4. Prefer a unique function defined in the same file.
+    5. If no same-file function exists, resolve only when there is
+       exactly one matching function in the repository.
+    6. Otherwise, leave the call unresolved.
+
+    This intentionally does not model full Python lexical scoping or
+    import behavior. Import-aware resolution will be handled separately.
+
+    Args:
+        call:
+            The function call being resolved.
+
+        symbol_index:
+            Mapping from symbol names to possible CodeChunk definitions.
+
+        chunk_by_id:
+            Mapping from chunk IDs to their exact CodeChunk objects.
+
+    Returns:
+        A CodeDependency when the call can be resolved confidently,
+        otherwise None.
+    """
+
+    candidates = symbol_index.get(call.callee_name, [])
+
+    function_candidates = [
+        candidate
+        for candidate in candidates
+        if candidate.type == ChunkType.FUNCTION
+    ]
+
+    if not function_candidates:
+        return None
+
+    caller = chunk_by_id.get(call.caller_id)
+
+    if caller is None:
+        return None
+
+    same_file_candidates = [
+        candidate
+        for candidate in function_candidates
+        if candidate.path == caller.path
+    ]
+
+    if len(same_file_candidates) == 1:
+        return CodeDependency(
+            caller_id=call.caller_id,
+            callee_id=same_file_candidates[0].id,
+        )
+
+    if len(same_file_candidates) > 1:
+        return None
+
+    if len(function_candidates) == 1:
+        return CodeDependency(
+            caller_id=call.caller_id,
+            callee_id=function_candidates[0].id,
+        )
+
+    return None
+
 
 def resolve_call(
     call: CodeCall,
@@ -425,20 +500,14 @@ def resolve_call(
             chunk_by_id
         )
 
-    if call.qualifier is not None:
-        return None
+    if call.qualifier is None:
+        return resolve_unqualified_call(
+            call,
+            symbol_index,
+            chunk_by_id
+        )
 
-    candidates = symbol_index.get(call.callee_name, [])
-
-    if len(candidates) != 1:
-        return None
-
-    callee = candidates[0]
-
-    return CodeDependency(
-        caller_id=call.caller_id,
-        callee_id=callee.id
-    )
+    return None
 
 
 def resolve_calls(
@@ -502,3 +571,5 @@ def resolve_calls(
             dependencies.append(dependency)
 
     return dependencies
+
+
