@@ -2,7 +2,7 @@ import unittest
 
 from app.models import CodeCall, CodeChunk, ChunkType
 from app.symbols import build_symbol_index
-from app.dependencies import resolve_call
+from app.dependencies import resolve_call, path_to_module
 
 
 def make_chunk(path, name, line=1):
@@ -116,6 +116,12 @@ class TestModuleResolution(unittest.TestCase):
         )
 
         self.assertIsNone(result)
+
+    def test_path_to_module_helper_function(self):
+        self.assertEqual(
+            path_to_module("services/utils.py"),
+            "services.utils"
+        )
 
 
 if __name__ == "__main__":

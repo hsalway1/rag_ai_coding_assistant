@@ -448,54 +448,30 @@ def resolve_call(
     ] = None
 ) -> CodeDependency | None:
     """
-    Resolve one raw CodeCall to a repository CodeDependency.
+        Current Rules
+        -------------
+        1. self.method():
+            Resolve methods within the caller's class.
 
-    Parameters
-    ----------
-    call : CodeCall
-        Unresolved call containing:
-            caller_id
-            callee_name
-            qualifier
+        2. function():
+            If the function name is explicitly imported, resolve
+            against that import without falling back globally.
 
-    symbol_index : dict[str, list[CodeChunk]]
-        Name-to-candidate-definitions lookup.
+            Otherwise, prefer a same-file top-level function,
+            then a unique repository-wide function.
 
-    chunk_by_id : dict[str, CodeChunk]
-        Exact chunk-ID-to-CodeChunk lookup.
+        3. module.function():
+            Resolve against an explicitly imported module,
+            including supported module aliases.
 
-    Returns
-    -------
-    CodeDependency | None
-        A dependency containing exact caller and callee chunk IDs.
+        4. Unresolved or ambiguous calls:
+            Return None rather than guessing.
 
-        Example:
-            CodeDependency(
-                caller_id="main.py::function::run::1",
-                callee_id="utils.py::function::multiply::3"
-            )
-
-        Returns None if the call cannot be resolved unambiguously.
-
-    Current Rules
-    -------------
-    1. qualifier == "self":
-        Attempt same-class method resolution using resolve_self_call().
-
-    2. qualifier is not None:
-        Leave unresolved (other object/module qualifiers unsupported).
-
-    3. qualifier is None:
-        Search the symbol index by callee_name.
-
-        Zero candidates     -> None
-        One candidate       -> CodeDependency
-        Multiple candidates -> None
-
-    Limitations
-    -----------
-    Unqualified calls still use global name matching and may
-    incorrectly match class methods. We will improve this next.
+        Limitations
+        -----------
+        Does not implement full lexical scoping, object type
+        inference, inheritance, dynamic imports, or complete
+        Python import semantics.
     """
     if call.qualifier == "self":
         return resolve_self_call(
@@ -551,7 +527,10 @@ def resolve_call(
 def resolve_calls(
     calls: list[CodeCall],
     symbol_index: dict[str, list[CodeChunk]],
-    chunk_by_id: dict[str, CodeChunk]
+    chunk_by_id: dict[str, CodeChunk],
+    imports_by_file: dict[
+        str, dict[str, tuple[str, str | None]]
+    ] = None
 ) -> list[CodeDependency]:
     """
     Resolve a collection of raw calls into repository dependencies.
@@ -602,7 +581,8 @@ def resolve_calls(
         dependency = resolve_call(
             call,
             symbol_index,
-            chunk_by_id
+            chunk_by_id,
+            imports_by_file
         )
 
         if dependency is not None:
@@ -738,9 +718,6 @@ def resolve_module_call(
     if imported_symbol is not None:
         return None
 
-    # Convert dotted Python module names into repository paths.
-    expected_path = module_name.replace(".", "/") + ".py"
-
     candidates = symbol_index.get(call.callee_name, [])
 
     matching_functions = [
@@ -748,7 +725,7 @@ def resolve_module_call(
         for candidate in candidates
         if (
             candidate.type == ChunkType.FUNCTION
-            and candidate.path == expected_path
+            and path_to_module(candidate.path) == module_name
         )
     ]
 
@@ -811,8 +788,6 @@ def resolve_direct_import(
     if imported_symbol is None:
         return None
 
-    expected_path = module_name.replace(".", "/") + ".py"
-
     candidates = symbol_index.get(imported_symbol, [])
 
     matches = [
@@ -820,7 +795,7 @@ def resolve_direct_import(
         for candidate in candidates
         if (
             candidate.type == ChunkType.FUNCTION
-            and candidate.path == expected_path
+            and path_to_module(candidate.path) == module_name
         )
     ]
 
@@ -831,6 +806,27 @@ def resolve_direct_import(
         caller_id=call.caller_id,
         callee_id=matches[0].id,
     )
+
+
+def path_to_module(path: str) -> str:
+    """Convert a repository-relative Python path into a dotted module name.
+
+    Args:
+        path: Relative path to a Python source file.
+
+    Returns:
+        The corresponding Python module name.
+    """
+    normalized = path.replace("\\", "/")
+
+    if normalized.endswith("/__init__.py"):
+        normalized = normalized[:-12]
+    elif normalized == "__init__.py":
+        return ""
+    elif normalized.endswith(".py"):
+        normalized = normalized[:-3]
+
+    return normalized.replace("/", ".")
 
 # testing - remove app from app.models from the import statement to run
 source = """
